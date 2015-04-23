@@ -2,9 +2,10 @@
 
 
   import akka.actor.{Props, ActorSystem, Actor}
-  
-  object Scene {
 
+  
+  object Scene
+  {
   import java.io.{FileReader, LineNumberReader}
 
   import scala.annotation.tailrec
@@ -12,9 +13,11 @@
   def fromFile(file: String) = {
     val in = new LineNumberReader(new FileReader(file))
     val (objects, lights) = readLines(in, Nil, Nil)
-    new Scene(objects, lights)
+    val temp = new Scene(objects, lights)    
+
   }
 
+  
   @tailrec
   private def readLines(in: LineNumberReader, objects: List[Shape], lights: List[Light]): (List[Shape], List[Light]) = {
     val line = in.readLine
@@ -48,38 +51,63 @@ class Scene private(val objects: List[Shape], val lights: List[Light]) {
 
   private def this(p: (List[Shape], List[Light])) = this(p._1, p._2)
 
-  val ambient = .2f
-  val background = Colour.black
-
-  val eye = Vector.origin
-  val angle = 90f // viewing angle
   //val angle = 180f // fisheye
 
-  def traceImage(width: Int, height: Int) {
-
-    val frustum = (.5 * angle * math.Pi / 180).toFloat
-
-    val cosf = math.cos(frustum)
-    val sinf = math.sin(frustum)
+  def traceImage(width: Int, height: Int) {  
 
     // Anti-aliasing parameter -- divide each pixel into sub-pixels and
     // average the results to get smoother images.
-    val ss = Trace.AntiAliasingFactor
+    //val ss = Trace.AntiAliasingFactor
 
+      
+    
     // TODO:
     // Create a parallel version of this loop, creating one actor per pixel or per row of
     // pixels.  Each actor should send the Coordinator messages to set the
     // color of a pixel.  The actor need not receive any messages.
-
      val system = ActorSystem("MySystem")
+      for (y <- 0 until height)
+      {
+       val actorRef = system.actorOf(Props[ActualScene], name = "ActorRay" + y)
+       actorRef ! (height, width, y, objects, lights, system)
+      }  
+    
+  } 
+
+  
+}//extra class
+
+
+
+class ActualScene extends Actor
+{
+  
+val ambient = .2f
+val background = Colour.black
+    val ss = Trace.AntiAliasingFactor
+
+
+      val eye = Vector.origin
+      val angle = 90f // viewing angle  
+      val frustum = (.5 * angle * math.Pi / 180).toFloat
+
+    val cosf = math.cos(frustum)
+    val sinf = math.sin(frustum) 
+      
+    // val system = ActorSystem("My2ndSystem")
+    // val coord = system.actorOf(Props[Coordinator], name = "ActorCoordRay")
+
+     def receive = {
+          case (height: Int, width: Int, y:Int, objects: List[Shape], lights: List[Light], system: ActorSystem)  => {
+            cycle(height, width, y, objects, lights, system)
+
+             }
+           }
+  
      
-    
-    
-    for (y <- 0 until height) {
-      
-      val actorRef = system.actorOf(Props[Coordinator], name = "ActorRay" + y)
-      
-      
+     def cycle(height: Int, width: Int, y: Int, objects: List[Shape], lights: List[Light], system: ActorSystem) =
+     {
+     val coord = system.actorOf(Props[Coordinator], name = "ActorCoordRay" + y)
       for (x <- 0 until width) {
 
         // This loop body can be sequential.
@@ -106,11 +134,10 @@ class Scene private(val objects: List[Shape], val lights: List[Light]) {
           Trace.lightCount += 1
 
        // Coordinator.set(x, y, colour)
-          actorRef ! (x,y,colour)
-          
-      }
-    }
-  }
+          coord ! (x,y,colour)
+      } 
+   
+     //}
 
   def shadow(ray: Ray, l: Light): Boolean = {
     val distSquared = (l.loc - ray.orig).normSquared
@@ -183,11 +210,11 @@ class Scene private(val objects: List[Shape], val lights: List[Light]) {
     }
   }.headOption
 
-  val maxDepth = 3
+// val maxDepth = 3
+////
+  def trace(ray: Ray): Colour = tracer(ray, 3)
 
-  def trace(ray: Ray): Colour = trace(ray, maxDepth)
-
-  private def trace(ray: Ray, depth: Int): Colour = {
+  def tracer(ray: Ray, depth: Int): Colour = {
     Trace.rayCount += 1
 
     // Compute the intersections of the ray with every object, sort by
@@ -218,3 +245,7 @@ class Scene private(val objects: List[Shape], val lights: List[Light]) {
     }
   }
 }
+
+}
+
+ 
